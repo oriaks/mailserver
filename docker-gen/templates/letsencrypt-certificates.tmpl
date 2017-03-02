@@ -1,0 +1,16 @@
+#!/bin/bash
+
+{{ range $letsencrypt_email, $containers := groupByMulti $ "Env.LETSENCRYPT_EMAIL" "," }}
+{{ range $container := $containers }}
+{{ $letsencrypt_domain := $container.Env.VIRTUAL_HOST }}
+# {{ $letsencrypt_domain }}
+certbot certonly \
+  --agree-tos \
+  --allow-subset-of-names \
+  --domains '{{ $letsencrypt_domain }}' \
+  --email '{{ $letsencrypt_email }}' \
+  --noninteractive \
+  --webroot \
+  --webroot-path '/var/www/html'
+{{ end }}
+{{ end }}

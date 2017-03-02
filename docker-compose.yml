@@ -1,0 +1,202 @@
+#certbot:
+#  image: oriaks/certbot:latest
+#  restart: unless-stopped
+#  volumes_from:
+#    - nginx:rw
+
+docker-gen:
+  image: oriaks/docker-gen:latest
+  links:
+#    - certbot
+    - nginx
+  restart: unless-stopped
+  volumes:
+    - ./docker-gen:/etc/docker-gen:ro
+    - /var/run/docker.sock:/var/run/docker.sock:ro
+  volumes_from:
+    - nginx:rw
+
+dovecot:
+  image: oriaks/dovecot:latest
+  dns:
+    - "${SAMBA_IP}"
+  env_file:
+    - config/common.env
+    - config/dovecot.env
+  expose:
+    - 3659/tcp
+  links:
+    - samba:ldap
+  ports:
+    - 0.0.0.0:110:110/tcp
+    - 0.0.0.0:143:143/tcp
+    - 0.0.0.0:993:993/tcp
+    - 0.0.0.0:995:995/tcp
+    - 0.0.0.0:4190:4190/tcp
+  restart: unless-stopped
+  volumes:
+    - /var/mail
+  volumes_from:
+    - ssl
+
+#freeradius:
+#  image: oriaks/freeradius:latest
+#  dns:
+#    - "${SAMBA_IP}"
+#  dns_search:
+#    - "${DOMAIN}"
+#  domainname: "${DOMAIN}"
+#  env_file:
+#    - config/common.env
+#    - config/freeradius.env
+#  links:
+#    - samba:ldap
+#  ports:
+#    - 0.0.0.0:1812:1812/tcp
+#    - 0.0.0.0:1812:1812/udp
+#    - 0.0.0.0:1813:1813/tcp
+#    - 0.0.0.0:1813:1813/udp
+#  restart: unless-stopped
+#  volumes_from:
+#    - winbind_socket
+
+ldap-account-manager:
+  image: oriaks/ldap-account-manager:latest
+  env_file:
+    - config/common.env
+    - config/ldap-account-manager.env
+  links:
+    - samba:ldap
+  restart: unless-stopped
+
+mariadb:
+  image: oriaks/mariadb:latest
+  env_file:
+    - config/common.env
+    - config/mariadb.env
+  restart: unless-stopped
+  volumes:
+    - /var/lib/mysql
+
+nginx:
+  image: oriaks/nginx:latest
+  ports:
+    - 0.0.0.0:80:80/tcp
+    - 0.0.0.0:443:443/tcp
+  restart: unless-stopped
+  volumes:
+    - /etc/letsencrypt
+    - /etc/nginx
+    - /etc/nginx/conf.d
+    - /etc/nginx/cert.d
+    - /etc/nginx/htpasswd.d
+    - /etc/nginx/vhost.d
+    - /var/www/html
+
+postfix:
+  image: oriaks/postfix:latest
+  dns:
+    - "${SAMBA_IP}"
+  dns_search:
+    - "${DOMAIN}"
+  domainname: "${DOMAIN}"
+  env_file:
+    - config/common.env
+    - config/postfix.env
+  links:
+    - dovecot:lmtp
+    - dovecot:sasl
+    - samba:ldap
+  ports:
+    - 0.0.0.0:25:25/tcp
+    - 0.0.0.0:465:465/tcp
+    - 0.0.0.0:587:587/tcp
+  restart: unless-stopped
+  volumes:
+    - /var/spool/postfix
+  volumes_from:
+    - ssl
+
+samba:
+  image: oriaks/samba:latest
+  dns:
+    - "${SAMBA_IP}"
+  dns_search:
+    - "${DOMAIN}"
+  domainname: "${DOMAIN}"
+  env_file:
+    - config/common.env
+    - config/samba.env
+  hostname: dc1
+  ports:
+#    - 0.0.0.0:53:53/tcp
+#    - 0.0.0.0:53:53/udp
+    - 0.0.0.0:88:88/tcp
+    - 0.0.0.0:88:88/udp
+    - 0.0.0.0:135:135/tcp
+    - 0.0.0.0:137:137/udp
+    - 0.0.0.0:138:138/udp
+    - 0.0.0.0:139:139/tcp
+    - 0.0.0.0:389:389/tcp
+    - 0.0.0.0:389:389/udp
+    - 0.0.0.0:445:445/tcp
+    - 0.0.0.0:464:464/tcp
+    - 0.0.0.0:464:464/udp
+    - 0.0.0.0:636:636/tcp
+    - 0.0.0.0:1024:1024/tcp
+    - 0.0.0.0:3268:3268/tcp
+    - 0.0.0.0:3269:3269/tcp
+  restart: unless-stopped
+  tty: true
+  volumes:
+    - /var/cache/samba
+    - /var/lib/samba
+    - /var/run/samba
+  volumes_from:
+    - winbind_socket
+
+sogo:
+  image: oriaks/sogo:latest
+  dns:
+    - "${SAMBA_IP}"
+  dns_search:
+    - "${DOMAIN}"
+  env_file:
+    - config/common.env
+    - config/sogo.env
+  expose:
+    - 20000/tcp
+  links:
+    - dovecot:imap
+    - dovecot:sieve
+    - mariadb:mysql
+    - postfix:smtp
+    - samba:ldap
+  restart: unless-stopped
+  volumes:
+    - /var/lib/sogo
+    - /var/spool/sogo
+
+sogo-httpd:
+  image: oriaks/sogo:latest
+  command: apache2
+  env_file:
+    - config/common.env
+    - config/sogo-httpd.env
+  expose:
+    - 80/tcp
+    - 443/tcp
+  links:
+    - sogo
+  restart: unless-stopped
+
+ssl:
+  image: tianon/true:latest
+  volumes:
+    - /var/lib/ssl
+
+winbind_socket:
+  image: tianon/true:latest
+  volumes:
+    - /var/lib/samba/winbindd_privileged
+    - /var/run/samba/winbindd
